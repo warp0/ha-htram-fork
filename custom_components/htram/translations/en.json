@@ -6,20 +6,30 @@
         },
         "error": {
             "cannot_connect": "Failed to connect",
-            "pairing_failed": "Connection failed (Services not found). Please make sure to ACCEPT THE PAIRING/PIN REQUEST on your Home Assistant host/server!",
+            "pairing_failed": "Connection failed - Device requires pairing!\n\n**To pair via SSH/terminal:**\n1. SSH to your Home Assistant server\n2. Run: `bluetoothctl`\n3. Inside bluetoothctl, run:\n   - `agent on`\n   - `default-agent`\n   - `pair <DEVICE_MAC_ADDRESS>`\n4. When prompted for PIN, enter: **000000** or **123456**\n5. Run: `trust <DEVICE_MAC_ADDRESS>`\n6. Type `exit` and retry adding the device in Home Assistant",
+            "pairing_required": "Device requires PIN code for pairing",
+            "invalid_pin": "Invalid PIN code. Please check the code displayed on the device and try again.",
+            "pin_required": "PIN code is required",
             "adapter_limit_reached": "Bluetooth adapter limit reached (too many connections). Try waiting or removing other devices.",
             "unknown": "Unexpected error"
         },
         "step": {
             "bluetooth_confirm": {
-                "description": "Do you want to set up {name}?",
+                "description": "Do you want to set up {name}?\n\n**Pairing Instructions:**\n1. Ensure the device is in pairing mode (Bluetooth icon flashing)\n2. Double-press the top button if needed to activate pairing\n3. If your system prompts for a PIN, use: **000000** or **123456**\n4. Accept any pairing/authorization requests from your operating system",
                 "title": "Discovered HTRAM Device"
             },
             "user": {
                 "data": {
                     "address": "Device"
                 },
-                "description": "Select an HTRAM device to set up"
+                "description": "Select an HTRAM device to set up.\n\n**Note:** Ensure your device is in pairing mode (double-press the top button until Bluetooth icon flashes)."
+            },
+            "pairing": {
+                "data": {
+                    "pin_code": "PIN Code"
+                },
+                "title": "Enter PIN Code",
+                "description": "The device {name} is displaying a PIN code on its screen.\n\n**Please enter the 6-digit PIN code shown on the device display.**\n\nCommon default PINs if no code is displayed:\n- 000000\n- 123456"
             }
         }
     },
