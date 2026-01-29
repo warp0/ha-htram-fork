@@ -1,3 +1,4 @@
+
 """DataUpdateCoordinator for HTRAM."""
 import asyncio
 import logging
@@ -6,6 +7,8 @@ import async_timeout
 
 from bleak.backends.device import BLEDevice
 from bleak.exc import BleakError
+from bleak_retry_connector import establish_connection
+from bleak_retry_connector import BleakClientWithServiceCache
 
 from homeassistant.components import bluetooth
 from homeassistant.core import HomeAssistant
@@ -13,7 +16,6 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, Upda
 
 from .const import (
     DOMAIN,
-    SERVICE_UUID,
     WRITE_UUID,
     NOTIFY_UUID,
     CMD_GET_REALTIME,
@@ -23,14 +25,12 @@ from .const import (
     CMD_SET_SOUND_ON,
     CMD_SET_TEMP_UNIT_C,
     CMD_SET_TEMP_UNIT_F,
-    CMD_HEARTBEAT,
     POLL_INTERVAL,
-    HEARTBEAT_INTERVAL
+    CMD_CHANGE_BLE_MODE
 )
 from . import utils
 
 _LOGGER = logging.getLogger(__name__)
-
 
 class HTRAMDataUpdateCoordinator(DataUpdateCoordinator):
     """Class to manage fetching HTRAM data."""
@@ -44,180 +44,115 @@ class HTRAMDataUpdateCoordinator(DataUpdateCoordinator):
             update_interval=timedelta(seconds=POLL_INTERVAL),
         )
         self.ble_device = ble_device
-        # Track if we've already logged a system journal warning for this device
-        self._system_journal_warned = False
         self.address = ble_device.address
         self.data = {}
         self._client = None
-        self._notifying = False
-        # self._heartbeat_task = None  # Heartbeat task removed
-        
-        # Instance futures for notification handler to access across polls
+        self._connected = False  # Custom connection state
         self._realtime_future = None
         self._settings_future = None
         self._sound_future = None
-        
         _LOGGER.info(f"Coordinator for {ble_device.address} initialized")
 
+    def _disconnected_callback(self, client):
+        _LOGGER.info(f"BLE client for {self.address} disconnected.")
+        client.stop_notify(NOTIFY_UUID)
+        self._connected = False
+
     async def _async_update_data(self):
-        """Fetch data from the device."""
-        import logging
+        """Fetch data from the device, limiting concurrent BLE connections."""
         try:
-            from bleak import BleakClient
-            from bleak_retry_connector import establish_connection
-
-            _LOGGER.debug(f"Coordinator updating: Check connection to {self.address}")
-
-            # Check if we can reuse connection
-            if self._client and self._client.is_connected:
-                client = self._client
-                _LOGGER.debug("Reusing existing connection")
-            else:
-                # Connection lost or never established
-                if self._client:
-                    _LOGGER.debug("Previous connection lost, cleaning up")
-                    self._notifying = False  # Reset notification state
-                    self._client = None
-
-                _LOGGER.debug(f"Coordinator updating: Establishing NEW connection to {self.address}")
-                # Use BLEDevice, not address - avoids implicit discover
-                client = await establish_connection(
-                    BleakClient, self.ble_device, self.ble_device.address
-                )
-                self._client = client
-                self._notifying = False  # New connection, need to setup notifications
-
-
-            _LOGGER.debug(f"Coordinator connected: {client.is_connected}")
-
-            # --- Activate BLE mode to keep connection alive ---
-            from .const import CMD_CHANGE_BLE_MODE
             try:
-                await client.write_gatt_char(WRITE_UUID, CMD_CHANGE_BLE_MODE, response=False)
+                _LOGGER.debug(f"Coordinator updating: Check connection to {self.address}")
+
+                if not self._client or not self._connected:
+                    _LOGGER.debug("Previous connection lost, cleaning up")
+                    _LOGGER.debug(f"Coordinator updating: Establishing NEW connection to {self.address}")
+
+                    client = await establish_connection(
+                        BleakClientWithServiceCache,
+                        self.ble_device,
+                        name=self.address,
+                        disconnected_callback=self._disconnected_callback,
+                        max_attempts=2,
+                        use_services_cache=True,
+                        timeout=10
+                    )
+                    self._client = client
+                    self._connected = True
+            except Exception as e:
+                _LOGGER.error(f"Failed to establish connection: {e}")
+            _LOGGER.debug(f"Coordinator connected: {self._connected}")
+                
+
+            try:
+                await self._client.write_gatt_char(WRITE_UUID, CMD_CHANGE_BLE_MODE, response=False)
                 _LOGGER.info(f"Sent BLE mode activation command to {self.address}")
-                await asyncio.sleep(0.5)  # Give device time to process
             except Exception as e:
                 _LOGGER.warning(f"Failed to send BLE mode activation: {e}")
 
-            # Create new futures for this poll (store in instance for handler to access)
             self._realtime_future = asyncio.Future()
             self._settings_future = asyncio.Future()
             self._sound_future = asyncio.Future()
+                    
+            def notification_handler(sender, data: bytearray):
+                hex_data = data.hex()
+                _LOGGER.debug(f"Received notification: {hex_data}")
+                if len(data) < 6:
+                    return
+                cmd_id = data[4:6].hex()
+                if cmd_id == "4144": # Realtime
+                    if self._realtime_future and not self._realtime_future.done():
+                        self._realtime_future.set_result(data)
+                elif cmd_id == "4143": # Settings
+                    if self._settings_future and not self._settings_future.done():
+                        self._settings_future.set_result(data)
+                elif cmd_id == "2723": # Sound status
+                    if self._sound_future and not self._sound_future.done():
+                        self._sound_future.set_result(data)
+        
+            await self._client.stop_notify(NOTIFY_UUID)
+            await asyncio.sleep(0.2)
+            await self._client.start_notify(NOTIFY_UUID, notification_handler)
+            await asyncio.sleep(0.2)
 
-            # Setup notifications - always ensure clean state
-            if not self._notifying:
-                # Defensive: always try to stop notifications first
-                try:
-                    await client.stop_notify(NOTIFY_UUID)
-                    _LOGGER.debug("Cleaned up stale BlueZ notification handles")
-                except Exception:
-                    pass
-                # Wait longer to let BlueZ release the handle
-                await asyncio.sleep(0.7)
-
-                def notification_handler(sender, data: bytearray):
-                    hex_data = data.hex()
-                    _LOGGER.debug(f"Received notification: {hex_data}")
-                    if len(data) < 6:
-                        return
-                    cmd_id = data[4:6].hex()
-                    if cmd_id == "4144": # Realtime
-                        if self._realtime_future and not self._realtime_future.done():
-                            self._realtime_future.set_result(data)
-                    elif cmd_id == "4143": # Settings
-                        if self._settings_future and not self._settings_future.done():
-                            self._settings_future.set_result(data)
-                    elif cmd_id == "2723": # Sound status
-                        if self._sound_future and not self._sound_future.done():
-                            self._sound_future.set_result(data)
-
-                # Retry start_notify up to 3 times with delay if NotPermitted error
-                import re
-                max_notify_attempts = 3
-                for attempt in range(1, max_notify_attempts + 1):
-                    try:
-                        await client.start_notify(NOTIFY_UUID, notification_handler)
-                        self._notifying = True
-                        _LOGGER.debug(f"Notifications started and will stay active (attempt {attempt})")
-                        break
-                    except Exception as e:
-                        err_str = str(e)
-                        if ("NotPermitted" in err_str or re.search(r"Notify acquired", err_str)) and attempt < max_notify_attempts:
-                            _LOGGER.warning(f"start_notify failed with NotPermitted/Notify acquired (attempt {attempt}), retrying after delay...")
-                            await asyncio.sleep(1.0)
-                        else:
-                            _LOGGER.error(f"Failed to start notifications: {e}")
-                            raise
-
-            # Heartbeat logic removed; BLE mode will be activated instead
-
-            timeout_occurred = False
 
             # 1. Get Realtime Data
-            await client.write_gatt_char(WRITE_UUID, CMD_GET_REALTIME, response=False)
+            await self._client.write_gatt_char(WRITE_UUID, CMD_GET_REALTIME)
+            await asyncio.sleep(0.5)
             try:
-                data = await asyncio.wait_for(self._realtime_future, timeout=3.0)
+                data = await asyncio.wait_for(self._realtime_future, timeout=5.0)
                 self._parse_realtime(data)
             except asyncio.TimeoutError:
                 _LOGGER.warning("Timeout waiting for realtime data")
-                timeout_occurred = True
 
             # 2. Get Sound Status
-            await client.write_gatt_char(WRITE_UUID, CMD_GET_SOUND_STATUS, response=False)
+            await self._client.write_gatt_char(WRITE_UUID, CMD_GET_SOUND_STATUS)
+            await asyncio.sleep(0.5)
             try:
-                data = await asyncio.wait_for(self._sound_future, timeout=3.0)
+                data = await asyncio.wait_for(self._sound_future, timeout=5.0)
                 self._parse_sound(data)
             except asyncio.TimeoutError:
                 _LOGGER.warning("Timeout waiting for sound status")
-                # Non-critical, but note it
 
             # 3. Get Settings
-            await client.write_gatt_char(WRITE_UUID, CMD_GET_SETTINGS, response=False)
+            await self._client.write_gatt_char(WRITE_UUID, CMD_GET_SETTINGS)
+            await asyncio.sleep(0.5)
             try:
-                data = await asyncio.wait_for(self._settings_future, timeout=3.0)
+                data = await asyncio.wait_for(self._settings_future, timeout=5.0)
                 self._parse_settings(data)
             except asyncio.TimeoutError:
                 _LOGGER.warning("Timeout waiting for settings")
-                # Non-critical
-
-            # Keep notifications active - don't stop/start on each poll
-            # Only stop during cleanup when disconnecting
-
-            # If we had a timeout on realtime data, our connection might be bad.
-            # Recycle the client to force a fresh connection next time.
-            if timeout_occurred:
-                _LOGGER.debug("Timeouts occurred, forcing client recycle")
-                await self._cleanup_client()
-
-            return self.data
-
-        except asyncio.TimeoutError:
-            await self._cleanup_client()
-            raise UpdateFailed("Update timed out")
-        except BleakError as e:
-            await self._cleanup_client()
-            raise UpdateFailed(f"Bluetooth error: {e}") from e
         except Exception as e:
-            await self._cleanup_client()
-            raise UpdateFailed(f"Unexpected error: {repr(e)}") from e
+            raise UpdateFailed(f"Error fetching data: {e}") from e
 
-    async def _cleanup_client(self):
-        """Clean up the client connection."""
-        if self._client:
-            try:
-                # Bleak automatically stops notifications on disconnect
-                # No need to manually call stop_notify
-                await self._client.disconnect()
-                _LOGGER.debug("Disconnected client during cleanup")
-                await asyncio.sleep(0.3)  # Give BlueZ time to fully release resources
-            except Exception as e:
-                _LOGGER.debug(f"Error during client cleanup: {e}")
-            finally:
-                self._client = None
-                self._notifying = False
+        try:
+            await self._client.stop_notify(NOTIFY_UUID)
+            _LOGGER.debug("Cleaned up stale BlueZ notification handles")
+        except Exception:
+            pass
+
+        return self.data
     
-    # Heartbeat loop removed
-
     def _crc16(self, data: bytes) -> int:
         """Calculate CRC16 for the given data using standard CCITT polynomial."""
         return utils.CRC16.crc16_short(data)
@@ -285,54 +220,17 @@ class HTRAMDataUpdateCoordinator(DataUpdateCoordinator):
 
     async def _send_command(self, command: bytearray):
         """Send a command to the device."""
-        from bleak import BleakClient
-        from bleak_retry_connector import establish_connection
         
         _LOGGER.info(f"Sending command: {len(command)} bytes")
         _LOGGER.debug(f"Command hex: {command.hex()}")
-        
-        ble_device = bluetooth.async_ble_device_from_address(
-            self.hass, self.address, connectable=True
-        )
-        if not ble_device:
-            raise UpdateFailed(f"Device {self.address} not available")
-        
-        # Reuse existing connection if available
-        if self._client and self._client.is_connected:
-            try:
-                await self._client.write_gatt_char(WRITE_UUID, command, response=False)
-                _LOGGER.info("Command sent successfully (reused connection)")
-                await asyncio.sleep(0.5)
-                return
-            except Exception as e:
-                _LOGGER.warning(f"Failed to send on existing connection: {e}")
-                await self._cleanup_client()
-        
-        # Need new connection
-        client = None
+             
         try:
-            client = await establish_connection(
-                BleakClient, ble_device, self.address, max_attempts=3
-            )
-            self._client = client  # Store for reuse
-            
-            await client.write_gatt_char(WRITE_UUID, command, response=False)
-            _LOGGER.info("Command sent successfully")
-            
-            # Small delay to let device process
-            await asyncio.sleep(0.5)
-            
-            # Keep connection alive - don't disconnect
-            
+            await self._client.write_gatt_char(WRITE_UUID, command, response=False)
+            _LOGGER.info("Command sent successfully (reused connection)")
+            return
         except Exception as e:
-            # Only disconnect on error
-            if client and client.is_connected:
-                try:
-                    await client.disconnect()
-                except Exception:
-                    pass
-            self._client = None
-            raise
+            _LOGGER.warning(f"Failed to send on existing connection: {e}")
+            return
 
     async def async_set_alarm_thresholds(self, low: int | None = None, high: int | None = None, screen_off: int | None = None):
         """Set alarm thresholds and screen off timer."""
@@ -442,7 +340,6 @@ class HTRAMDataUpdateCoordinator(DataUpdateCoordinator):
         # Send BLE mode initialization first (required for V1W)
         _LOGGER.info(f"Sending BLE mode initialization for WiFi provisioning")
         await self._send_command(CMD_CHANGE_BLE_MODE)
-        await asyncio.sleep(1)  # Wait for device to process
         
         # Now send WiFi configuration
         packet = utils.construct_submit_ssid(ssid, password)

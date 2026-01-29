@@ -37,9 +37,11 @@ CMD_SET_SOUND_ON = b"\x7B\x41\x00\x09\x26\x43\x01\x00\x00\x01\x2B\x66\x7D"
 # 7B 41 00 09 40 43 04 00 60 06 EF 17 7D (Read Settings - includes screen off)
 CMD_GET_SETTINGS = b"\x7B\x41\x00\x09\x40\x43\x04\x00\x60\x06\xEF\x17\x7D"
 
-# Polling Interval - poll every 60 seconds to reduce BLE traffic
-# Heartbeat keeps connection alive every 10 seconds
-POLL_INTERVAL = 60
+
+# Polling Interval - poll every 120 seconds to reduce BLE traffic
+POLL_INTERVAL = 100
+
+# Heartbeat interval (default: 10 seconds)
 HEARTBEAT_INTERVAL = 10
 
 # Temperature Unit
