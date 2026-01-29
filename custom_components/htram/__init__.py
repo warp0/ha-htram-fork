@@ -1,4 +1,5 @@
 """The HTRAM integration."""
+import asyncio
 import logging
 
 from homeassistant.components import bluetooth
@@ -29,8 +30,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     hass.data.setdefault(DOMAIN, {})
     hass.data[DOMAIN][entry.entry_id] = coordinator
 
-    hass.data[DOMAIN][entry.entry_id] = coordinator
-
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
     # Register Service
@@ -41,27 +40,26 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         mqtt_server = call.data.get("mqtt_server")
         aes_key = call.data.get("aes_key")
         aes_iv = call.data.get("aes_iv")
-
-        # Find the coordinator. In a real scenario, user should target a device/entity.
-        # But for now, we'll try to find the coordinator associated with the service call context
-        # or just pick the first one if global? Service calls usually target an entity.
-        # Let's assume the user targets an entity or device, but standard HA service calls need target resolution.
-        # Simplification: We iterate over all loaded coordinators and apply to all? 
-        # Or better: Require device_id/entity_id?
-        # Standard approach: register service at platform level or use helper to get coordinator.
         
-        # For this custom component, let's iterate all entries for now (assuming 1 device usually)
-        # or rely on the user to pick the right one if we implemented entity services.
-        # But we are registering a DOMAIN service.
-        
+        # Apply configuration to all configured HTRAM devices
+        # In a production system, you might want to add device targeting
         for entry_id, coord in hass.data[DOMAIN].items():
-            if mqtt_server and aes_key and aes_iv:
-                await coord.async_provision_mqtt(mqtt_server, aes_key, aes_iv)
-                # Small delay between commands
-                await asyncio.sleep(1)
-            
-            if ssid and password:
-                await coord.async_provision_wifi(ssid, password)
+            try:
+                # Send MQTT configuration first if provided
+                if mqtt_server and aes_key and aes_iv:
+                    _LOGGER.info(f"Provisioning MQTT for device {coord.address}")
+                    await coord.async_provision_mqtt(mqtt_server, aes_key, aes_iv)
+                    # Small delay between commands
+                    await asyncio.sleep(1)
+                
+                # Then send WiFi configuration if provided
+                if ssid and password:
+                    _LOGGER.info(f"Provisioning WiFi for device {coord.address}: SSID={ssid}")
+                    await coord.async_provision_wifi(ssid, password)
+                    _LOGGER.info(f"WiFi provisioning completed for {coord.address}")
+                    
+            except Exception as e:
+                _LOGGER.error(f"Failed to configure device {coord.address}: {e}", exc_info=True)
 
     import voluptuous as vol
     from homeassistant.helpers import config_validation as cv

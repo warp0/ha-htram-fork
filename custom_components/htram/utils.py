@@ -2,114 +2,65 @@ import struct
 from typing import List, Union
 
 class CRC16:
-    """CRC16 implementation ported from Android app."""
+    """CRC16 implementation matching the reference air_monitor.py."""
+    # CRC16 Table with polynomial 0x8005 (Standard for Honeywell HTRAM)
+    # This matches exactly the table from https://github.com/noname122021/honeywell-htram-v1w-ble-monitor/blob/main/air_monitor.py
     CRC16_TABLE = [
-        0, 4129, 8258, 12387, 16516, 20645, 24774, 28903, 33032, 37161, 41290, 45419, 49548, 53677, 57806, 61935,
-        4657, 528, 12915, 8786, 21173, 17044, 29431, 25302, 37689, 33560, 45947, 41818, 54205, 50076, 62463, 58334,
-        9314, 13379, 1056, 5121, 25830, 29895, 17572, 21637, 42346, 46411, 34088, 38153, 58862, 62927, 50604, 54669,
-        13907, 9842, 5649, 1584, 30423, 26358, 22165, 18100, 46939, 42874, 38681, 34616, 63455, 59390, 55197, 51132,
-        18628, 22757, 26886, 31015, 2112, 6241, 10370, 14499, 51660, 55789, 59918, 64047, 35144, 39273, 43402, 47531,
-        23285, 19156, 31543, 27414, 6769, 2640, 15027, 10898, 56317, 52188, 64575, 60446, 39801, 35672, 48059, 43930,
-        27942, 23813, 19684, 15555, 11426, 7297, 3168, -4081, 60974, 56845, 52716, 48587, 44458, 40329, 36200, 32071,
-        32535, 28470, 24277, 20212, 16019, 11954, 7761, 3696, 65567, 61502, 57309, 53244, 49051, 44986, 40793, 36728,
-        37256, 33190, 45514, 41449, 53772, 49707, 62030, 57965, 4224, 158, 12482, 8417, 20740, 16675, 28998, 24933,
-        41913, 37783, 50171, 46041, 58429, 54299, 66687, 62557, 8881, 4751, 17139, 13009, 25397, 21267, 33655, 29525,
-        46570, 42440, 38312, 34182, 63086, 58956, 54828, 50698, 13538, 9408, 5280, 1150, 30054, 25924, 21796, 17666,
-        51163, 47097, 42905, 38839, 67679, 63613, 59421, 55355, 18131, 14065, 9873, 5807, 34647, 30581, 26389, 22323,
-        55884, 51755, 64142, 60013, 39368, 35239, 47626, 43497, 22852, 18723, 31110, 26981, 6336, 2207, 14594, 10465,
-        60541, 56412, 52283, 48154, 44025, 39896, 35767, 31638, 27509, 23380, 19251, 15122, 10993, 6864, 2735, -2664,
-        65198, 61069, 56940, 52811, 48682, 44553, 40424, 36295, 32166, 28037, 23908, 19779, 15650, 11521, 7392, 3263,
-        69791, 65726, 61533, 57468, 53275, 49210, 45017, 40952, 36759, 32694, 28501, 24436, 20243, 16178, 11985, 7920
+        0x0000, 0x8005, 0x800F, 0x000A, 0x801B, 0x001E, 0x0014, 0x8011,
+        0x8033, 0x0036, 0x003C, 0x8039, 0x0028, 0x802D, 0x8027, 0x0022,
+        0x8063, 0x0066, 0x006C, 0x8069, 0x0078, 0x807D, 0x8077, 0x0072,
+        0x0050, 0x8055, 0x805F, 0x005A, 0x804B, 0x004E, 0x0044, 0x8041,
+        0x80C3, 0x00C6, 0x00CC, 0x80C9, 0x00D8, 0x80DD, 0x80D7, 0x00D2,
+        0x00F0, 0x80F5, 0x80FF, 0x00FA, 0x80EB, 0x00EE, 0x00E4, 0x80E1,
+        0x00A0, 0x80A5, 0x80AF, 0x00AA, 0x80BB, 0x00BE, 0x00B4, 0x80B1,
+        0x8093, 0x0096, 0x009C, 0x8099, 0x0088, 0x808D, 0x8087, 0x0082,
+        0x8183, 0x0186, 0x018C, 0x8189, 0x0178, 0x817D, 0x8177, 0x0172,
+        0x01B0, 0x81B5, 0x81BF, 0x01BA, 0x81AB, 0x01AE, 0x01A4, 0x81A1,
+        0x01E0, 0x81E5, 0x81EF, 0x01EA, 0x81FB, 0x01FE, 0x01F4, 0x81F1,
+        0x81D3, 0x01D6, 0x01DC, 0x81D9, 0x01C8, 0x81CD, 0x81C7, 0x01C2,
+        0x0140, 0x8145, 0x814F, 0x014A, 0x815B, 0x015E, 0x0154, 0x8151,
+        0x8173, 0x0176, 0x017C, 0x8179, 0x0168, 0x816D, 0x8167, 0x0162,
+        0x8123, 0x0126, 0x012C, 0x8129, 0x0138, 0x813D, 0x8137, 0x0132,
+        0x0110, 0x8115, 0x811F, 0x011A, 0x810B, 0x010E, 0x0104, 0x8101,
+        0x8303, 0x0306, 0x030C, 0x8309, 0x0318, 0x831D, 0x8317, 0x0312,
+        0x0330, 0x8335, 0x833F, 0x033A, 0x832B, 0x032E, 0x0324, 0x8321,
+        0x0360, 0x8365, 0x836F, 0x036A, 0x837B, 0x037E, 0x0374, 0x8371,
+        0x8353, 0x0356, 0x035C, 0x8359, 0x0348, 0x834D, 0x8347, 0x0342,
+        0x03C0, 0x83C5, 0x83CF, 0x03CA, 0x83DB, 0x03DE, 0x03D4, 0x83D1,
+        0x83F3, 0x03F6, 0x03FC, 0x83F9, 0x03E8, 0x83ED, 0x83E7, 0x03E2,
+        0x83A3, 0x03A6, 0x03AC, 0x83A9, 0x03B8, 0x83BD, 0x83B7, 0x03B2,
+        0x0390, 0x8395, 0x839F, 0x039A, 0x838B, 0x038E, 0x0384, 0x8381,
+        0x0280, 0x8285, 0x828F, 0x028A, 0x829B, 0x029E, 0x0294, 0x8291,
+        0x82B3, 0x02B6, 0x02BC, 0x82B9, 0x02A8, 0x82AD, 0x82A7, 0x02A2,
+        0x82E3, 0x02E6, 0x02EC, 0x82E9, 0x02F8, 0x82FD, 0x82F7, 0x02F2,
+        0x02D0, 0x82D5, 0x82DF, 0x02DA, 0x82CB, 0x02CE, 0x02C4, 0x82C1,
+        0x8243, 0x0246, 0x024C, 0x8249, 0x0258, 0x825D, 0x8257, 0x0252,
+        0x0270, 0x8275, 0x827F, 0x027A, 0x826B, 0x026E, 0x0264, 0x8261,
+        0x0220, 0x8225, 0x822F, 0x022A, 0x823B, 0x023E, 0x0234, 0x8231,
+        0x8213, 0x0216, 0x021C, 0x8219, 0x0208, 0x820D, 0x8207, 0x0202
     ]
-
-    # Correcting negative values from Java's signed short behavior manually if needed
-    # but in Python we can use unsigned logic and mask with 0xFFFF
-
-    @staticmethod
-    def get_crc_table_value(index: int) -> int:
-        val = CRC16.CRC16_TABLE[index]
-        if val > 32767: # Handling Java signed short overflow artifact if present in copypaste
-             pass # The table looks like it has some negative values?
-             # Let's re-verify the table source.
-             # In the Java file: 32783, 10, etc. The negative-looking ones in my paste might be due to tool output issues?
-             # Wait, the `CRC16.java` tool output showed `ServiceStarter.ERROR_UNKNOWN` etc.
-             # I should re-read the Java file CAREFULLY or generate the table.
-             # The Java code says `gPloy = 4129` which is 0x1021. This is CRC-16-CCITT/XMODEM standard.
-             # Initial value is 0.
-        return val
 
     @staticmethod
     def crc16_short(data: bytes) -> int:
-        """Calculates CRC16 using the standard CCITT (0x1021) polynomial."""
-        # Implementing the algorithmic approach from the Java `getCrcOfByte` to ensure match
-        # Java:
-        # private short getCrcOfByte(int i) {
-        #    int i2 = i << 8;
-        #    for (int i3 = 7; i3 >= 0; i3--) {
-        #        i2 = (32768 & i2) != 0 ? (i2 << 1) ^ this.gPloy : i2 << 1;
-        #    }
-        #    return (short) (i2 & 65535);
-        # }
-        # gPoly = 4129 (0x1021)
-        
-        # However, the table in Java is precomputed.
-        # Let's use `crc16MakeTableMethod` logic from Java.
-        # s (accum) = 0
-        # loop data:
-        #   index = (b & 0xFF) ^ ((s >>> 8) & 0xFF)
-        #   s = (s << 8) ^ TABLE[index]
-        
+        """
+        Calculates CRC16 using polynomial 0x8005.
+        This matches the reference implementation from air_monitor.py:
+        https://github.com/noname122021/honeywell-htram-v1w-ble-monitor/blob/main/air_monitor.py#L51-L56
+        """
         crc = 0
         for byte in data:
-            index = (byte ^ (crc >> 8)) & 0xFF
-            # We need the correct table value.
-            # Let's generate the table value on the fly to avoid copy-paste errors from the 'view_file' output
-            # which had weird constants like `ExifInterface.DATA_PACK_BITS_COMPRESSED`.
-            
-            table_val = CRC16._get_crc_of_byte(index)
-            crc = ((crc << 8) & 0xFFFF) ^ table_val
-            
-        return crc & 0xFFFF
-
-    @staticmethod
-    def _get_crc_of_byte(i: int) -> int:
-        g_poly = 0x1021
-        i2 = i << 8
-        for _ in range(8):
-            if (0x8000 & i2) != 0:
-                i2 = (i2 << 1) ^ g_poly
-            else:
-                i2 = i2 << 1
-        return i2 & 0xFFFF
+            idx = ((crc >> 8) ^ byte) & 0xFF
+            crc = ((crc << 8) ^ CRC16.CRC16_TABLE[idx]) & 0xFFFF
+        return crc
 
     @staticmethod
     def crc16_bytes(data: bytes) -> bytes:
+        """
+        Calculate CRC16 and return as big-endian bytes (network byte order).
+        This matches the reference: crc.to_bytes(2, byteorder="big")
+        """
         crc = CRC16.crc16_short(data)
-        # Java: short2bytes(s) -> bArr[0] = s%256 (low?), bArr[1] = s>>8 (high?)
-        # Let's check `CRCCodeUtil.java`:
-        # bArr[1] = (byte) (s % 256);  <-- index 1 is LOW byte
-        # bArr[0] = (byte) (s >> 8);   <-- index 0 is HIGH byte (Wait, loop i=1; i>=0; i--)
-        # Loop: i=1: bArr[1] = s%256. s=s>>8.
-        #       i=0: bArr[0] = s%256. 
-        # So it is Big Endian? 
-        # Java: return short2bytes(crc16Short(bArr));
-        # short2bytes:
-        # byte[] bArr = new byte[2];
-        # for (int i = 1; i >= 0; i--) {
-        #     bArr[i] = (byte) (s % 256);
-        #     s = (short) (s >> 8);
-        # }
-        # Iteration 1 (i=1): bArr[1] = low byte. s shifts right.
-        # Iteration 2 (i=0): bArr[0] = high byte.
-        # Result: [High, Low]. Yes, standard Network Byte Order (Big Endian).
-        
-        return struct.pack(">H", crc)
-
-    @staticmethod
-    def crc16_bytes_le(data: bytes) -> bytes:
-        """Little endian CRC for some specific packets if needed."""
-        crc = CRC16.crc16_short(data)
-        return struct.pack("<H", crc)
+        return crc.to_bytes(2, byteorder='big')
 
 
 def build_command_packet(cmd_head: bytes, payload_parts: List[bytes]) -> bytes:

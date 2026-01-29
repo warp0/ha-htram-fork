@@ -16,6 +16,10 @@ CMD_GET_REALTIME = b"\x7B\x41\x00\x07\x40\x44\x02\x00\xFC\x3E\x7D"
 # 7B 41 00 06 24 01 01 78 22 7D
 CMD_HEARTBEAT = b"\x7B\x41\x00\x06\x24\x01\x01\x78\x22\x7D"
 
+# BLE Mode Initialization - REQUIRED before WiFi provisioning
+# 7B 41 00 0C 74 58 01 01 00 4E 08 7D
+CMD_CHANGE_BLE_MODE = b"\x7B\x41\x00\x0C\x74\x58\x01\x01\x00\x4E\x08\x7D"
+
 # 7B 41 00 07 26 23 01 00 09 C0 7D
 CMD_GET_SOUND_STATUS = b"\x7B\x41\x00\x07\x26\x23\x01\x00\x09\xC0\x7D"
 
@@ -33,8 +37,10 @@ CMD_SET_SOUND_ON = b"\x7B\x41\x00\x09\x26\x43\x01\x00\x00\x01\x2B\x66\x7D"
 # 7B 41 00 09 40 43 04 00 60 06 EF 17 7D (Read Settings - includes screen off)
 CMD_GET_SETTINGS = b"\x7B\x41\x00\x09\x40\x43\x04\x00\x60\x06\xEF\x17\x7D"
 
-# Polling Interval
-POLL_INTERVAL = 60 
+# Polling Interval - poll every 60 seconds to reduce BLE traffic
+# Heartbeat keeps connection alive every 10 seconds
+POLL_INTERVAL = 60
+HEARTBEAT_INTERVAL = 10
 
 # Temperature Unit
 # Fetch: 7B 41 00 07 20 6E 02 06 7E 30 7D

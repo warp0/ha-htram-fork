@@ -1,17 +1,18 @@
 # Honeywell Transmission Risk Air Monitor (HTRAM) Integration
 
-> [!WARNING]
-> **Work In Progress**: This integration is currently in active development.
-> **Auto-Discovery does NOT work at this time.**
-> You MUST pair the device with your Home Assistant host MANUALLY (e.g., using `bluetoothctl` in the console) BEFORE adding this integration.
->
-> *This integration was entirely reverse-engineered and written by **Antigravity (Google Deepmind)** with the help of a human supervisor.*
-
 [![hacs_badge](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://github.com/hacs/integration)
 
 Custom component for Home Assistant to integrate the **Honeywell Transmission Risk Air Monitor (HTRAM)** via **Bluetooth Low Energy (BLE)**.
 
-This integration was reverse-engineered from the official (now defunct) Android application to provide full local control without cloud dependency.
+This integration was reverse-engineered from the official Android application to provide full local control without cloud dependency.
+
+## ✨ Recent Improvements
+
+- ✅ **Fixed CRC Calculation** - Now uses correct polynomial (0x8005) for reliable device communication
+- ✅ **Automatic Reconnection** - Handles connection drops with exponential backoff retry
+- ✅ **PIN Entry in UI** - Enter pairing PIN directly in Home Assistant (no terminal needed!)
+- ✅ **Screen Timeout Fixed** - Properly sets screen auto-off timer
+- ✅ **WiFi Configuration** - Provision WiFi credentials via service call
 
 ## Features
 
@@ -26,27 +27,62 @@ This integration was reverse-engineered from the official (now defunct) Android 
     *   **Alarm Thresholds**: Customize Low (Green/Yellow) and High (Yellow/Red) CO2 thresholds.
     *   **Temperature Unit**: Switch between Celsius and Fahrenheit.
     *   **Time Sync**: Synchronize device time with Home Assistant (UTC).
+    *   **WiFi Provisioning**: Configure device WiFi credentials.
 
 ## Installation
 
-### Option 1: HACS (Recommended)
+### Via HACS (Recommended)
 
-1.  Open HACS in Home Assistant.
-2.  Go to **Integrations** > **Custom repositories**.
-3.  Add the URL of this repository.
-4.  Category: **Integration**.
-5.  Click **Add** and then **Download**.
-6.  Restart Home Assistant.
+1. **Add Custom Repository**:
+   - Open HACS in Home Assistant
+   - Click on **Integrations**
+   - Click the **⋮** (three dots) menu in the top right
+   - Select **Custom repositories**
+   - Add your fork URL: `https://github.com/YOUR_USERNAME/ha-htram-fork`
+   - Category: **Integration**
+   - Click **Add**
 
-### Option 2: Manual
+2. **Install the Integration**:
+   - Search for "HTRAM" in HACS Integrations
+   - Click **Download**
+   - Restart Home Assistant
 
-1.  Download the `custom_components/htram` folder.
+3. **Add the Device**:
+   - Go to **Settings** > **Devices & Services**
+   - Click **+ Add Integration**
+   - Search for "HTRAM"
+   - Follow the setup wizard
+   - If prompted, enter the 6-digit PIN shown on the device screen
+
+### Manual Installation
+
+1.  Download the `custom_components/htram` folder from this repository.
 2.  Copy it to your Home Assistant's `config/custom_components/` directory.
 3.  Restart Home Assistant.
+4.  Add via Settings > Devices & Services > Add Integration > HTRAM.
 
 ## Configuration
 
-### Step 1: Manual Pairing (Required)
+### Device Setup
+
+1. **Prepare the Device**:
+   - Double-press the top button on your HTRAM device until the Bluetooth icon starts flashing
+   - The device is now in pairing mode
+
+2. **Add to Home Assistant**:
+   - Go to **Settings** > **Devices & Services**
+   - Click **+ Add Integration**
+   - Search for "HTRAM"
+   - Select your device from the list
+   - If the device requires pairing, you'll see a PIN entry form
+   - Check the device screen for the 6-digit PIN and enter it in Home Assistant
+   - Click **Submit**
+
+3. **Done!** Your device will appear with all sensors and controls available
+
+### WiFi Provisioning (Optional)
+
+If your device supports WiFi, you can configure it using a service call:
 
 Due to limitations in the current auto-discovery logic, you must pair the device with your OS first.
 
